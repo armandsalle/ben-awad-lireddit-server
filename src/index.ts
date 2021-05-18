@@ -12,7 +12,6 @@ import { HelloResolver } from "./resolvers/hello"
 import { PostResolver } from "./resolvers/post"
 import { UserResolver } from "./resolvers/user"
 import { __prod__ } from "./constants"
-import { MyContext } from "./types"
 
 const main = async () => {
   const orm = await MikroORM.init(mikroOrmConfig)
@@ -44,7 +43,7 @@ const main = async () => {
       resolvers: [HelloResolver, PostResolver, UserResolver],
       validate: false,
     }),
-    context: ({ req, res }): MyContext => ({ em: orm.em, req, res }),
+    context: ({ req, res }) => ({ em: orm.em, req, res }),
   })
 
   apolloServer.applyMiddleware({ app })
@@ -52,12 +51,6 @@ const main = async () => {
   app.listen(4000, () => {
     console.log("🚀 server running on port 4000")
   })
-
-  // const post = orm.em.create(Post, { title: "my first post" })
-  // await orm.em.persistAndFlush(post)
-
-  // const post = await orm.em.find(Post, {})
-  // console.log(post)
 }
 
 main().catch((err) => {
