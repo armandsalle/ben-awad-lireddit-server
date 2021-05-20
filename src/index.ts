@@ -4,7 +4,7 @@ import express from "express"
 import { ApolloServer } from "apollo-server-express"
 import { buildSchema } from "type-graphql"
 import connectRedis from "connect-redis"
-import redis from "redis"
+import Redis from "ioredis"
 import session from "express-session"
 import cors from "cors"
 
@@ -16,12 +16,16 @@ import { COOKIE_NAME, __prod__ } from "./constants"
 
 const main = async () => {
   const orm = await MikroORM.init(mikroOrmConfig)
-  orm.getMigrator().up()
+
+  orm
+    .getMigrator()
+    .up()
+    .catch((err) => console.log("migration errors: ", err))
 
   const app = express()
 
   const RedisStore = connectRedis(session)
-  const redisClient = redis.createClient()
+  const redis = new Redis()
 
   app.use(
     cors({
@@ -33,7 +37,7 @@ const main = async () => {
   app.use(
     session({
       name: COOKIE_NAME,
-      store: new RedisStore({ client: redisClient, disableTouch: true }),
+      store: new RedisStore({ client: redis, disableTouch: true }),
       cookie: {
         maxAge: 1000 * 60 * 60 * 24 * 365 * 10, // 10 ans
         httpOnly: true,
@@ -51,7 +55,7 @@ const main = async () => {
       resolvers: [HelloResolver, PostResolver, UserResolver],
       validate: false,
     }),
-    context: ({ req, res }) => ({ em: orm.em, req, res }),
+    context: ({ req, res }) => ({ em: orm.em, req, res, redis }),
   })
 
   apolloServer.applyMiddleware({ app, cors: false })
