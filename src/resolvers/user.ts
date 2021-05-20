@@ -25,7 +25,7 @@ class FieldError {
 }
 
 @ObjectType()
-class UserReponse {
+class UserResponse {
   @Field(() => [FieldError], { nullable: true })
   errors?: FieldError[]
 
@@ -35,35 +35,79 @@ class UserReponse {
 
 @Resolver()
 export class UserResolver {
+  @Mutation(() => UserResponse)
+  async changePassword(
+    @Arg("token") token: string,
+    @Arg("newPassword") newPassword: string,
+    @Ctx() { em, redis, req }: MyContext
+  ): Promise<UserResponse> {
+    if (newPassword.length <= 5) {
+      return {
+        errors: [
+          {
+            field: "newPassword",
+            message: "length must be grater than 5",
+          },
+        ],
+      }
+    }
+
+    const key = FORGET_PASSWORD_PREFIX + token
+    const userId = await redis.get(key)
+
+    if (!userId) {
+      return {
+        errors: [
+          {
+            field: "token",
+            message: "token expired",
+          },
+        ],
+      }
+    }
+
+    const user = await em.findOne(User, { id: parseInt(userId) })
+
+    if (!user) {
+      return {
+        errors: [
+          {
+            field: "token",
+            message: "user no longer exists",
+          },
+        ],
+      }
+    }
+
+    user.password = await argon2.hash(newPassword)
+    await em.persistAndFlush(user)
+
+    await redis.del(key)
+
+    req.session.userId = user.id
+
+    return { user }
+  }
+
   @Mutation(() => Boolean)
   async forgotPassword(@Arg("email") email: string, @Ctx() { em, redis }: MyContext) {
     const user = await em.findOne(User, { email })
-
     if (!user) {
-      // email not in db
+      // the email is not in the db
       return true
     }
 
     const token = v4()
 
-    await redis.set(FORGET_PASSWORD_PREFIX + token, user.id, "ex", 1000 * 60 * 60 * 24 * 3)
+    await redis.set(FORGET_PASSWORD_PREFIX + token, user.id, "ex", 1000 * 60 * 60 * 24 * 3) // 3 days
 
-    sendEmail(email, `<a href="localhost:3000/change-password/${token}">reset password</a>`)
+    await sendEmail(email, `<a href="http://localhost:3000/change-password/${token}">reset password</a>`)
 
     return true
   }
 
-  @Query(() => User, { nullable: true })
-  async me(@Ctx() { req, em }: MyContext): Promise<User | null> {
-    if (!req.session.userId) {
-      return null
-    }
-
-    return await em.findOne(User, { id: req.session.userId })
-  }
-
-  @Mutation(() => UserReponse)
-  async register(@Arg("options") options: UsernamePasswordInput, @Ctx() { em, req }: MyContext): Promise<UserReponse> {
+  @Mutation(() => UserResponse)
+  async register(@Arg("options") options: UsernamePasswordInput, @Ctx() { em, req }: MyContext): Promise<UserResponse> {
     /*     const validatedData = UsernamePasswordInputShema.validate(options)
     console.log(validatedData) */
 
@@ -100,12 +144,12 @@ export class UserResolver {
     return { user }
   }
 
-  @Mutation(() => UserReponse)
+  @Mutation(() => UserResponse)
   async login(
     @Arg("usernameOrEmail") usernameOrEmail: string,
     @Arg("password") password: string,
     @Ctx() { em, req }: MyContext
-  ): Promise<UserReponse> {
+  ): Promise<UserResponse> {
     const user = await em.findOne(
       User,
       usernameOrEmail.includes("@") ? { email: usernameOrEmail } : { username: usernameOrEmail }
@@ -140,6 +184,16 @@ export class UserResolver {
     return {
       user,
     }
+  }
+
+  @Query(() => User, { nullable: true })
+  me(@Ctx() { req, em }: MyContext) {
+    // you are not logged in
+    if (!req.session.userId) {
+      return null
+    }
+
+    return em.findOne(User, req.session.userId)
   }
 
   @Mutation(() => Boolean)
