@@ -14,17 +14,21 @@ import { UserResolver } from "./resolvers/user"
 import { COOKIE_NAME, __prod__ } from "./constants"
 import { Post } from "./entities/Post"
 import { User } from "./entities/User"
+import path from "path"
 
 const main = async () => {
-  await createConnection({
+  const conn = await createConnection({
     type: "postgres",
     database: "lireddit2",
     username: "postgres",
     password: "",
     logging: true,
     synchronize: true,
+    migrations: [path.join(__dirname, "./migrations/*")],
     entities: [Post, User],
   })
+
+  conn.runMigrations()
 
   // const orm = await MikroORM.init(mikroOrmConfig)
   // orm
